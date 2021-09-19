@@ -1,0 +1,1620 @@
+---
+date: September 18, 2021
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+editor_options: 
+  chunk_output_type: console
+---
+What's up with White Wine? by Cindy Wyant
+========================================================
+
+```{r Packages, echo=FALSE, message=FALSE, warning=FALSE}
+
+library(ggplot2)
+library(GGally)
+library(gridExtra)
+library(psych)
+library(dplyr)
+library(RColorBrewer)
+library(quantreg)
+library(corrplot)
+
+```
+
+```{r Load the Data, echo=FALSE}
+
+ww <- read.csv('wineQualityWhites.csv')
+
+```
+
+The white wine dataset includes 11 different chemical attributes and 1
+subjective quality score based on wine experts' opinions, for a total of 12
+data points for each of nearly 5,000 white wines.
+
+The different chemical attributes are:  
+1. Fixed Acidity  
+2. Volatile Acidity  
+3. Citric Acid  
+4. Residual Sugar  
+5. Chlorides  
+6. Free Sulfur Dioxide  
+7. Total Sulfur Dioxide  
+8. Density  
+9. pH  
+10. Sulphates  
+11. Alcohol  
+
+# Univariate Plots
+
+```{r General Data Info, echo=FALSE, warning=FALSE, message=FALSE}
+
+# names(ww)
+summary(ww)
+str(ww)
+
+```
+
+Looking over the summaries, it would seem I'm running into a ton of far outliers.
+Many of the variables' 1st and 3rd quartiles are much further away from min and
+max respectively, than they are from one another (telling me most of the
+information is in the center there, but some points absolutely are not).
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+
+# create a grid of very simple histograms by variable
+
+g1 <- qplot(ww$fixed.acidity, binwidth = 0.25)
+g2 <- qplot(ww$volatile.acidity, binwidth = 0.02)
+g3 <- qplot(ww$citric.acid, binwidth = 0.05)
+g4 <- qplot(ww$residual.sugar, binwidth = 1)
+g5 <- qplot(ww$chlorides, binwidth = 0.005)
+g6 <- qplot(ww$free.sulfur.dioxide, binwidth = 5)
+g7 <- qplot(ww$total.sulfur.dioxide, binwidth = 5)
+g8 <- qplot(ww$density, binwidth = 0.001)
+g9 <- qplot(ww$pH, binwidth = 0.025)
+g10 <- qplot(ww$sulphates, binwidth = 0.01)
+g11 <- qplot(ww$alcohol, binwidth = 0.1)
+g12 <- qplot(ww$quality, binwidth = 1)
+
+grid.arrange(g1, g2, g3, g4, g5, g6, g7, g8, g9, g10, g11, g12, ncol = 2)
+
+```
+
+As far as charts go, the first thing I was really interested in seeing was a set
+of histograms so I can see each variable. This gives me a good idea of what I
+want to look into next. A few, such as citric acid and chlorides, have very
+long tails. Some others, like residual sugar and density, don't have any visible
+high values but the charts are still formatted as though they do, so I'd like
+to see what's going on there.
+
+### Fixed Acidity
+
+```{r Fixed Acidity, echo=FALSE, warning=FALSE, message=FALSE}
+
+summary(ww$fixed.acidity)
+
+fa1 <- ggplot(aes(x = fixed.acidity), data = ww) +
+  geom_histogram() +
+  labs(title = 'Fixed Acidity')
+
+# quantile(ww$fixed.acidity, .01) it's 5
+# quantile(ww$fixed.acidity, .99) it's 9.2
+
+fa2 <- ggplot(aes(x = fixed.acidity),
+       data = subset(ww, fixed.acidity < 14.2)) +
+  geom_histogram(binwidth = .1) +
+  labs(title = 'Fixed Acidity Excluding Max Value')
+
+fa3 <- ggplot(aes(x = fixed.acidity),
+       data = subset(ww, fixed.acidity > 5 & fixed.acidity < 9.2)) +
+  geom_histogram(binwidth = .1) +
+  labs(title = 'Fixed Acidity Excluding 1% from Both Ends')
+
+grid.arrange(fa1, fa2, fa3, ncol = 1)
+
+with(subset(ww, fixed.acidity > 5 & fixed.acidity < 9.2), summary(fixed.acidity))
+
+```
+
+True to form! Fixed Acidity has extreme outliers on both ends. I tried the same
+plot while excluding ONLY the highest value data point, which helped, but I
+wanted to see how it would turn out after lopping percentages. Running the chart
+again while including only the central 98% looks like it makes a lot more sense.
+
+The final summary is of that chunk of 98% of the data; the min and max have
+obviously changed drastically, but three of the four central stats are identical
+to those from the full set, and the fourth is extremely close (off by 0.016). I
+get concerned about how comfortable I feel excluding outliers, so seeing those
+summaries acts as validation in a sense.
+
+### Volatile Acidity
+
+```{r Volatile Acidity, echo=FALSE, message=FALSE, error=FALSE}
+
+summary(ww$volatile.acidity)
+# quantile(ww$volatile.acidity, .01) it's 0.12
+# quantile(ww$volatile.acidity, .99) it's 0.63
+
+va1 <- ggplot(aes(x = volatile.acidity),
+       data = ww) +
+  geom_histogram() +
+  labs(title = 'Volatile Acidity')
+
+va2 <- ggplot(aes(x = log10(volatile.acidity)),
+       data = ww) +
+  geom_histogram() +
+  labs(title = 'log10(Volatile Acidity)')
+
+va3 <- ggplot(aes(x = volatile.acidity),
+       data = subset(ww, volatile.acidity > 0.12 & volatile.acidity < 0.63)) +
+  geom_histogram() +
+  labs(title = 'Volatile Acidity Excluding Top & Bottom 1%')
+
+va4 <- ggplot(aes(x = log10(volatile.acidity)),
+       data = subset(ww, volatile.acidity > 0.12 & volatile.acidity < 0.63)) +
+  geom_histogram() +
+  labs(title = 'log10(Volatile Acidity) Excluding Top & Bottom 1%')
+
+grid.arrange(va1, va2, va3, va4, ncol = 1)
+
+```
+
+A lot of these variables are in the same boat in that they have one or a few
+extreme outliers. Log10 helps some of them look like a workable data model,
+but it's definitely not always a fix.
+
+### Citric Acid
+
+```{r Citric Acid, echo=FALSE, warning=FALSE, message=FALSE}
+
+summary(ww$citric.acid)
+
+ggplot(aes(x = citric.acid), data = ww) +
+  geom_histogram() +
+  labs(title = 'Citric Acid')
+
+# quantile(ww$citric.acid, .01)
+# quantile(ww$citric.acid, .99)
+
+ggplot(aes(x = citric.acid), data = ww) +
+  xlim(.05, .74) +
+  geom_histogram(binwidth = .01) +
+  labs(title = 'Citric Acid Excluding Highest and Lowest 1%')
+
+```
+
+There's a bit of a tail, but honestly it doesn't seem significant. If I had to
+guess, that spike right before 0.5 is some sort of secondary standard (like the
+standard if the citric acid content is higher), so whether that's from rounding
+or actual measurements, the amount doesn't seem concerning.
+
+What I just wrote was a valid explanation in my opinion, but I was still writing
+it partially to convince myself I don't need to try log10. I did wind up trying
+and the table turned out far worse; results are below.
+
+```{r Citric Acid log10, echo=FALSE, warning=FALSE, message=FALSE}
+
+ggplot(aes(x = log10(citric.acid)), data = ww) +
+  geom_histogram(binwidth = 0.05) +
+  labs(title = 'log10(Citric Acid)')
+
+```
+
+### Percent Citric Acid
+
+```{r Percent Citric Acid, echo=FALSE, message=FALSE, error=FALSE}
+
+ww$pct.citric <- (ww$citric.acid / ww$fixed.acidity)
+summary(ww$pct.citric)
+
+ggplot(aes(x = pct.citric), data = ww) +
+  geom_histogram() +
+  labs(title = 'Citric Acid as % of Fixed Acidity')
+
+# quantile(ww$pct.citric, .99) it's 0.1072464
+ggplot(aes(x = pct.citric),
+       data = subset(ww, pct.citric < 0.1072464)) +
+  geom_histogram() +
+  labs(title = 'Citric Acid as % of Fixed Acidity Excluding Highest 1%')
+
+```
+
+I got it in my head that getting this percentage (as well as one a little ways
+down the document), that is how much of the Fixed Acidity is Citric Acid, was
+potentially important and could show me some unexpected insight. At this point,
+I haven't learned anything from it except that Citric Acid very rarely makes up
+more than 10% of a white wine's Fixed Acidity.
+
+Note from the future: I'd read that citric acid is included in a wine's fixed
+acidity, but looking at the dataset information again, I'm pretty sure the fixed
+acidity is just tartaric acid; it's not very clear between the variable and the
+description found below. Anyway if the fixed variable does NOT include citric,
+my whole idea behind this one is out the window.
+
+### Residual Sugar
+
+```{r Residual Sugar, echo=FALSE, warning=FALSE, message=FALSE}
+
+summary(ww$residual.sugar)
+
+ggplot(aes(x = residual.sugar), data = ww) +
+  geom_histogram() +
+  labs(title = 'Residual Sugar')
+
+table(subset(ww, residual.sugar > 60))
+
+```
+
+The highest value in this set is over double the value of the second highest. I somewhat expected it to be the same record as the Sulfur Dioxide anomaly (it's further down, I did some ill-fated rearranging), but it's a different one.
+
+```{r Residual Sugar Less, echo=FALSE, warning=FALSE, message=FALSE}
+
+ggplot(aes(x = residual.sugar),
+       data = subset(ww, residual.sugar < 18.8)) +
+  geom_histogram(binwidth = .2) +
+  geom_freqpoly(color = 'orange') +
+    labs(x = 'Residual Sugar',
+       y = 'Count',
+       title = 'Total Residual Sugar Excluding Top 1%')
+
+ggplot(aes(x = log10(residual.sugar)),
+       data = subset(ww, residual.sugar < 18.8)) +
+  geom_histogram(binwidth = .04) +
+  geom_freqpoly(color = 'orange') +
+  labs(x = 'log10(Residual Sugar)',
+       y = 'Count',
+       title = 'Total log10(Residual Sugar) Excluding Top 1%')
+
+```
+
+Excluding that top 1% gives a way better picture of the data, and it looks rife
+for a logging. Residual Sugar after a log10 transformation almost looks bimodal.
+
+### Chlorides
+
+```{r Chlorides, echo=FALSE, message=FALSE, error=FALSE}
+
+summary(ww$chlorides)
+
+ggplot(aes(x = chlorides), data = ww) +
+  geom_histogram() +
+  labs(title = 'Chlorides')
+
+# qplot(log10(ww$chlorides))
+# quantile(ww$chlorides, .01) it's .02
+# quantile(ww$chlorides, .99) it's .16
+# quantile(ww$chlorides, .95) it's .067
+
+ggplot(aes(x = chlorides),
+       data = subset(ww, chlorides > .02 & chlorides < .067)) +
+  geom_histogram(binwidth = .001) +
+  labs(title = 'Chlorides Excluding Bottom 1% and Top 5%')
+
+```
+
+Chlorides need to be cut down pretty heftily to look at the bulk of the data. I
+had to take 5% off the top (after trying 1, 2, 3, and 4%). The 1st and 3rd
+quartiles only have a value difference of 0.014, but the maximum value is almost
+seven times larger than the 3rd quartile, 0.339 more by value.
+
+### Free Sulfur Dioxide
+
+```{r Free Sulfur Dioxide, echo=FALSE, warning=FALSE, message=FALSE}
+
+summary(ww$free.sulfur.dioxide)
+
+ggplot(aes(x = free.sulfur.dioxide), data = ww) +
+  geom_histogram(binwidth = 2) +
+  labs(title = 'Free Sulfur Dioxide')
+
+str(subset(ww, free.sulfur.dioxide > 150))
+
+```
+
+My dataset information has the following to say about free sulfur dioxide:
+
+> at free SO2 concentrations over 50 ppm, > SO2 becomes evident in the nose and taste of wine
+
+If one of these actually does measure at 289, that's well beyond the realm of
+reason (also illegal in many places if it's actually white wine and not sweet wine). I'm ignoring this one for this variable, but I'm curious to see how it
+fares in the other categories. The second highest value is 146.5, still well
+beyond what's expected; in total, 17 values are above 100. For now, I'll just
+remove the single highest, but I'll keep those others in mind as I continue.
+
+```{r Free Sulfur Dioxide Less, echo=FALSE, warning=FALSE, message=FALSE}
+
+ggplot(aes(x = free.sulfur.dioxide),
+       data = subset(ww, free.sulfur.dioxide < 150)) +
+  geom_histogram(binwidth = 2) +
+  labs(title = 'Free Sulfur Dioxide Excluding Highest Value')
+
+# quantile(ww$free.sulfur.dioxide, .99)
+ggplot(aes(x = free.sulfur.dioxide),
+       data = ww) +
+  xlim(0, quantile(ww$free.sulfur.dioxide, 0.99)) +
+  geom_histogram(binwidth = 2) +
+  labs(title = 'Free Sulfur Dioxide Excluding Highest 1%')
+
+```
+
+Again, I'm not positive what I'll wind up doing with these, but I'll likely
+want to check the oddly high values against quality later.
+
+### Total Sulfur Dioxide
+
+```{r Total Sulfur Dioxide, echo=FALSE, warning=FALSE, message=FALSE}
+
+# quantile(ww$total.sulfur.dioxide, .99)
+
+ts1 <- ggplot(aes(x = total.sulfur.dioxide),
+       data = ww) +
+  geom_histogram(binwidth = 2) +
+  labs(x = 'Sulfur Dioxide',
+       y = 'Count',
+       title = 'Total Sulfur Dioxide')
+
+ts2 <- ggplot(aes(x = total.sulfur.dioxide),
+       data = subset(ww, total.sulfur.dioxide < 400)) +
+  geom_histogram(binwidth = 2) +
+  labs(x = 'Sulfur Dioxide',
+       y = 'Count',
+       title = 'Total Sulfur Dioxide Excluding Highest Value')
+
+ts3 <- ggplot(aes(x = total.sulfur.dioxide),
+       data = subset(ww, total.sulfur.dioxide < 241)) +
+  geom_histogram(binwidth = 2) +
+  labs(x = 'Sulfur Dioxide',
+       y = 'Count',
+       title = 'Total Sulfur Dioxide Excluding Top 1%')
+
+grid.arrange(ts1, ts2, ts3, ncol = 1)
+
+```
+
+Predictably, Total Sulfur Dioxide follows the same pattern.
+
+### Percent Free Sulfur Dioxide
+
+```{r Percent Free Sulfur Dioxide, echo=FALSE, warning=FALSE, message=FALSE}
+
+ww$pct.free <- (ww$free.sulfur.dioxide / ww$total.sulfur.dioxide)
+summary(ww$pct.free)
+
+ggplot(aes(x = pct.free), data = ww) +
+  geom_histogram() +
+  labs(title = 'Free Sulfur Dioxide as % of Total SD')
+
+# quantile(ww$pctfree, .99) it's 0.5141397
+
+ggplot(aes(x = pct.free), data = subset(ww, pct.free < .5141397)) +
+  geom_histogram() +
+  labs(title = 'Free Sulfur Dioxide as % of Total SD Excluding Highest 1%')
+
+```
+
+I wanted to see the ratio of Free Sulfur Dioxide to Total Sulfur Dioxide;
+obviously there's no guaranteed correlation between this new variable and any
+others, but it seems there possibly could be. Laid out in a histogram, this new
+percentage variable follows the same pattern as most of the others, but the
+upper outliers aren't quite as extreme as many. I did try a log10
+transformation, but that just turned the data negatively skewed.
+
+### Density
+
+```{r Density, echo=FALSE, message=FALSE, error=FALSE}
+
+summary(ww$density)
+
+k1 <- ggplot(aes(x = density), data = ww) +
+  geom_histogram() +
+  labs(title  = 'Density')
+
+k2 <- ggplot(aes(x = density),
+           data = subset(ww, density < 1.001031 & density > .9881569)) +
+  geom_histogram(binwidth = .0001)
+
+grid.arrange(k1, k2, ncol = 1)
+
+```
+
+The summary makes it clear that Density falls squarely in the "extremely high
+outliers" camp. I didn't have much luck with log10, but shaving off just 0.3%
+from each end made a huge difference.
+
+### pH
+
+```{r pH, echo=FALSE, warning=FALSE, message=FALSE}
+
+summary(ww$pH)
+
+ggplot(aes(x = pH), data = ww) +
+  geom_histogram(binwidth = 0.01) +
+  labs(title = 'pH')
+
+```
+
+Really the only thing I'd potentially do to change pH is cut off those
+outliers on both ends, but I'm not even convinced it's necessary at this point.
+Additionally, if I'm comparing pH with other variables, I'll likely be paring
+the set a bit already.
+
+### Sulphates
+
+```{r Sulphates, echo=FALSE, message=FALSE, warning=FALSE}
+
+summary(ww$sulphates)
+
+ggplot(aes(x = sulphates),
+       data = ww) +
+  geom_histogram(binwidth = .05) +
+  labs(title = 'Sulphates')
+
+ggplot(aes(x = log10(sulphates)),
+       data = ww) +
+  geom_histogram(binwidth = .05) +
+  labs(title = 'log10(Sulphates)')
+
+```
+
+Without removing any data points from Sulphates, it can be taken from a normal
+distribution with a long tail to a pretty normal distribution using log10.
+
+### Alcohol
+
+```{r Alcohol, echo=FALSE, warning=FALSE, message=FALSE}
+
+summary(ww$alcohol)
+
+ggplot(aes(x = alcohol), data = ww) +
+  geom_histogram(binwidth = 0.1) +
+  labs(title = 'Alcohol')
+
+table(round(ww$alcohol, digits = 1))
+
+qplot(log10(ww$alcohol), binwidth = .007)
+
+```
+
+Based on what I'm seeing here, alcohol content seems to have a general downward
+slope. There are certainly higher points along the way, but many of those would
+be at numbers ending in .0 or .5 (for example: 11.9 has a count of 56; 12 has a
+count of 102; 12.1 has a count of 53), so that looks more rounding related. 9.5
+is the value for the 1st quartile and also the mode. 9.4 would be the mode if
+not rounding to the tenth, only by a count of 1.
+
+My delve into Alcohol will almost definitively benefit from binning later on,
+possibly by ones, but most likely by halves (8:8.4, 8.5:8.9, etc).
+
+### Quality
+
+```{r Quality, echo=FALSE, warning=FALSE, message=FALSE}
+
+summary(ww$quality)
+
+ggplot(aes(x = quality), data = ww) +
+  geom_histogram(binwidth = 1) +
+  labs(title = 'quality')
+
+table(ww$quality)
+
+```
+
+Clearly 6/10 is the most common quality rating, followed by 5, then 7. The
+reason I took an actual count was to see if 4 or 8 was higher, and it's 8. No
+white wines received a score below 3 or above 9 (and only 5 got a score of 9).
+
+# Univariate Analysis
+
+### Dataset structure/features
+
+The white wine dataset holds 12 data points (technically 13, but one is just
+a record-identifying integer) for each of 4,898 records. 11 of these variables
+are numbers, the identifier is an integer, and the quality rating is an integer.
+That being the case, the values are pretty straight-forward without any
+specialized ranking/ordering.
+
+Some off the bat stuff I've seen:
+
+1. Alcohol content looks so organized with what looks like natural bins, but
+it doesn't resemble anything else nor am I very confident there IS a correlation
+with any other factors.
+
+2. Quality is usually 'average' at a rating of 6/10. The ratings go neither
+below 3 nor above 9, and both of those are rare. This may make it more difficult
+to find any possible correlation with other factors, as there are so few data
+points on the high or low ends.
+
+3. Wines with Residual Sugar over 45 are considered 'sweet', which I believe
+drops them from the 'white' category; I only have one above 45 at 65.8. This
+record (2782) is also extremly high in Volatile Acidity and Density, and on the
+high end of several other categories. This could point to a correlation between
+Residual Sugar and Volatile Acidity and/or Residual Sugar and Density, or it
+could mean nothing, but luckily that will be easy enough to find out.
+
+### Features of interest
+
+Volatile Acidity, Citric Acid, and Free Sulfur Dioxide are the three variables
+the dataset information specifically mentions as affecting taste (Citric Acid
+in a positive manner and the other two negatively). It stands to reason these
+three variables should most heavily affect Quality, which is publicly the most
+important factor here.
+
+### Potential supporting features
+
+I know from personal experience that Alcohol can affect the taste of a wine, as
+can Residual Sugar. Apart from their potential relation to Quality, I'd also
+like to check those two against one another, as sugar is 'eaten' during the
+fermentation process, so high Residual Sugar should indicate high Alcohol and/or
+that fermentation was halted before it could finish.
+
+### New variables
+
+I added both 'pct.citric' and 'pct.free'.
+
+pct.citric refers to Citric Acid as a percentage of the total Fixed Acidity.
+Citric Acid is already calculated into that total, so the calculation is simple
+division. The main reason for creating this variable is that citric acid is said
+to, in small quantities, 'add 'freshness' and flavor to wines' (according to the
+dataset information). I want to see if this is actually true, or at the very
+least if there's any correlation at all between the Citric Acid, the Percent
+Citric Acid, and the Quality.
+
+pct.free refers to Free Sulfur Dioxide as a percentage of Total Sulfur Dioxide,
+again just a simple division operation. Too much Free Sulfur Dioxide in
+particular (as opposed to the Total Sulfur Dioxide) is said to be the potential
+problem when it comes to taste, but as with the Citric Acid, I'd like to see if
+the ratio actually seems to come into play.
+
+### Odd distributions/performed 'fixes'
+
+Many of my variables hold extremely high outliers. Fixed Acidity, Volatile
+Acidity, Citric Acid, Residual Sugar, Chlorides, Free Sulfur Dioxide, Total
+Sulfur Dioxide, and Density all have seemingly unreasonably high outliers. Each
+of those can be 'fixed' by shaving off a very small percentage from the highest
+values.
+
+A couple others (pH and Sulphates, and Volatile Acidity kind of falls in the
+previous camp as well as this one) have very long tails; while it's the same
+problem to an extent (high outliers), this means there are MORE of those
+outliers, so if I want to see anything useful in the data, I need to remove a
+higher percentage, which isn't exactly ideal.
+
+Alcohol is very interesting. I'd mentioned I think it's likely more of a
+downward slope based on rounding, but I could be wrong. The data generally looks
+like there are three or four tiers of alcohol content, each its own little hill,
+so I'll likely be separating those values into three or four groups based on
+those values during further analysis.
+
+# Bivariate Plots
+
+### Initial Bivariate Housekeeping
+
+```{r BivariateHousekeeping, echo=FALSE, warning=FALSE, message=FALSE}
+
+# I'm guessing this looks odd, but I wanted to create a new dataset by trimming off the percentages/values at the points I found to work best for each variable (wwLess). I tried creating this by using only the most extremely trimmed variable as the subset basis, but it didn't work and I'm not really sure why. wwLPairs is a different version of this, trimming based on only the variables I wound up putting in the correlation matrix. wwPairs is the dataset used to plug in for the matrix (containing pre-trimmed columns for the matrix)
+
+wwLess <- subset(ww, fixed.acidity > 5 &
+                   fixed.acidity < 9.2 &
+                   volatile.acidity > 0.12 &
+                   volatile.acidity < 0.63 &
+                   citric.acid > 0.05 &
+                   citric.acid < 0.74 &
+                   pct.citric < 0.1072464 &
+                   residual.sugar < 18.8 &
+                   chlorides > 0.02 &
+                   chlorides < 0.067 &
+                   free.sulfur.dioxide < 81 &
+                   total.sulfur.dioxide < 241 &
+                   pct.free < 0.5141397 &
+                   density < 1.001031 &
+                   density > 0.9881569)
+
+wwLPairs <- subset(ww,
+                   residual.sugar < 18.8 &
+                   chlorides > 0.02 &
+                   chlorides < 0.067 &
+                   free.sulfur.dioxide < 81 &
+                   total.sulfur.dioxide < 241 &
+                   density < 1.001031 &
+                   density > 0.9881569)
+
+wwPairs <- select(wwLPairs,
+                  residual.sugar,
+                  chlorides,
+                  free.sulfur.dioxide,
+                  total.sulfur.dioxide,
+                  density,
+                  alcohol,
+                  quality)
+
+pairs.panels(wwPairs, hist.col = 'orange', alpha = 1/10)
+
+```
+
+I was really excited to run this and see what I can see! I tried ggpairs, but
+the outliers made a really negative impact; while deciding the best way to go
+about removing them from the matrix, I found out about 'psych' from the sample
+project and very happily switched over.
+
+Fixed Acidity and Volatile Acidity (Citric Acid variables are discussed below)
+simply don't seem to correlate with anything. I did create a total.acidity
+variable, summing up Fixed and Volatile, but it still showed me nothing;
+Volatile Acidity is present in too small of volumes to really impact the total.
+I also tried using the ratio of Volatile to Fixed to no avail. Acids just seem
+to exist in a vacuum when it comes to white wine. Percent Free Sulfur Dioxide
+looks like a useless metric as well; I was excited about ratios, thinking it
+made sense that they'd affect other aspects, but they offered nothing of value.
+
+```{r Corrplot, echo=FALSE, message=FALSE, warning=FALSE}
+
+cp1 <- corrplot(cor(subset(wwLess, select = -c(X))))
+cp2 <- corrplot(cor(wwPairs))
+
+```
+
+I previously did get stuck in the 'correlation coefficient' trap, in that I was
+looking at those discouraging scores and discounting a lot of possibilities due
+to it. This chart's highest scores are between Density and both Sugar/Alcohol,
+but those are used in measuring one another, so if anything those scores should
+actually be higher.
+
+### Citric Acid Variables
+
+```{r CitricAcidVariables, echo=FALSE, warning=FALSE, message=FALSE}
+
+ggplot(aes(x = citric.acid, y = pct.citric),
+       data = subset(ww, pct.citric < 0.125)) +
+  geom_point(color = 'orange', position = 'jitter', alpha = 1/10) +
+  geom_smooth() +
+  labs(title = 'Citric Acid vs Citric Acid as % of Fixed Acidity')
+
+cor(ww$pct.citric, ww$citric.acid)
+
+```
+
+I was a bit attached to the Citric Acid metrics, the original citric.acid as
+well as my created pct.citric; I'm a big fan of citrus overall, and it's
+supposed to help with flavor and add 'freshness'. I wound up removing them from
+my pairs matrix as the Citric Acid to Quality correlation was only -0.019, and
+the only other correlation score worth a second glance was somewhat internal,
+between Citric Acid and Percent Citric Acid at 0.9372.
+
+That did surprise me actually, as it indicates this indicates a standalone
+quality. What I mean is it seems Citric Acid will or won't be added, regardless
+of any other component. As more Citric Acid is added, it makes up a higher
+percentage of Fixed Acidity, showing it's not added measured as any sort of
+proportion to another component. It's not a drastic percentage change, but it's extremely clear.
+
+Note! Now that I'm under the impression Citric Acid is NOT counted into that
+Fixed Acidity number, pct.citric would have to be changed from
+`citric.acid / free.acidity` to `citric.acid / (free.acidity / citric.acid)`. I made the new variable and ran the correlation for it and it's only about 0.007
+lower at 0.9365.
+
+### Everything vs Quality
+
+```{r QualityBoxes, echo=FALSE, warning=FALSE, message=FALSE}
+
+qual1 <- ggplot(aes(x = quality, y = fixed.acidity),
+       data = wwLess) +
+  geom_boxplot(aes(group = quality)) +
+  labs(title = 'Fixed Acidity')
+
+qual2 <- ggplot(aes(x = quality, y = volatile.acidity),
+       data = wwLess) +
+  geom_boxplot(aes(group = quality)) +
+  labs(title = 'Volatile Acidity')
+
+qual3 <- ggplot(aes(x = quality, y = citric.acid),
+       data = wwLess) +
+  geom_boxplot(aes(group = quality)) +
+  geom_line(stat = 'summary', color = 'red') +
+  labs(title = 'Citric Acid')
+
+qual4 <- ggplot(aes(x = quality, y = residual.sugar),
+       data = wwLess) +
+  geom_boxplot(aes(group = quality)) +
+  geom_line(stat = 'summary', color = 'red') +
+  labs(title = 'Residual Sugar')
+
+qual5 <- ggplot(aes(x = quality, y = chlorides),
+       data = wwLess) +
+  geom_boxplot(aes(group = quality)) +
+  geom_line(stat = 'summary', color = 'red') +
+  labs(title = 'Chlorides')
+
+qual6 <- ggplot(aes(x = quality, y = free.sulfur.dioxide),
+       data = wwLess) +
+  geom_boxplot(aes(group = quality)) +
+  labs(title = 'Free Sulfur Dioxide')
+
+qual7 <- ggplot(aes(x = quality, y = total.sulfur.dioxide),
+       data = wwLess) +
+  geom_boxplot(aes(group = quality)) +
+  geom_line(stat = 'summary', color = 'red') +
+  labs(title = 'Total Sulfur Dioxide')
+
+qual8 <-ggplot(aes(x = quality, y = density),
+       data = wwLess) +
+  geom_boxplot(aes(group = quality)) +
+  geom_line(stat = 'summary', color = 'red') +
+  labs(title = 'Density')
+
+qual9 <- ggplot(aes(x = quality, y = pH),
+       data = wwLess) +
+  geom_boxplot(aes(group = quality)) +
+  geom_line(stat = 'summary', color = 'red') +
+  labs(title = 'pH')
+
+qual10 <- ggplot(aes(x = quality, y = sulphates),
+       data = wwLess) +
+  geom_boxplot(aes(group = quality)) +
+  labs(title = 'Sulphates')
+
+qual11 <- ggplot(aes(x = quality, y = pct.citric),
+       data = wwLess) +
+  geom_boxplot(aes(group = quality)) +
+  labs(title = '% Citric of Fixed Acidity')
+
+qual12 <- ggplot(aes(x = quality, y = pct.free),
+       data = wwLess) +
+  geom_boxplot(aes(group = quality)) +
+  labs(title = '% Free of Total SD')
+
+grid.arrange(qual1, qual2, qual3, qual4, qual5, qual6, qual7, qual8, qual9, qual10, qual11, qual12, ncol = 4, top = 'Different Variables Against Quality')
+
+# by(wwLess$fixed.acidity, wwLess$quality, summary)
+
+```
+
+As Quality is what I'd like to be able to predict here, I wanted a quick glance at each variable interacting with it. After looking at this initially, I added red mean lines on charts that looked like they may have anything near a steadily rising or lowering path between a Quality rating of 5 and 9 (inclusive). 3 of them at least seemed like a long shot.
+
+```{r QualityVThings, echo=FALSE, warning=FALSE, message=FALSE}
+
+# another set of quick-view plots using only the ones with red lines and narrowing the range of Quality to exclude 3, 4
+
+qca <- ggplot(aes(x = quality, y = citric.acid),
+       data = subset(ww, quality >= 5)) +
+  geom_boxplot(aes(group = quality)) +
+  ylim(quantile(ww$citric.acid, .01), quantile(ww$citric.acid, .95))
+
+qrs <- ggplot(aes(x = quality, y = residual.sugar),
+       data = subset(ww, quality >= 5)) +
+  geom_boxplot(aes(group = quality)) +
+  ylim(quantile(ww$residual.sugar, .01), quantile(ww$residual.sugar, .95))
+
+qch <- ggplot(aes(x = quality, y = chlorides),
+       data = subset(ww, quality >= 5)) +
+  geom_boxplot(aes(group = quality)) +
+  ylim(quantile(ww$chlorides, .01), quantile(ww$chlorides, .95))
+
+qts <- ggplot(aes(x = quality, y = total.sulfur.dioxide),
+       data = subset(ww, quality >= 5)) +
+  geom_boxplot(aes(group = quality)) +
+  ylim(quantile(ww$total.sulfur.dioxide, .01),
+       quantile(ww$total.sulfur.dioxide, .95))
+
+qde <- ggplot(aes(x = quality, y = density),
+       data = subset(ww, quality >= 5)) +
+  geom_boxplot(aes(group = quality)) +
+  ylim(quantile(ww$density, .01), quantile(ww$density, .95))
+
+qph <- ggplot(aes(x = quality, y = pH),
+       data = subset(ww, quality >= 5)) +
+  geom_boxplot(aes(group = quality)) +
+  ylim(quantile(ww$pH, .01), quantile(ww$pH, .95))
+
+grid.arrange(qca, qrs, qch, qts, qde, qph, ncol = 3,
+             top = 'Pared Down Variables vs Quality of 5+')
+
+```
+
+Narrowing down the compared variables as well as cutting 3 and 4 from the x-axis
+helped to see these more clearly, but if anything I'm just less confident in all
+of them now, mostly so the ones I found to be unlikely in the first place
+(Citric Acid, Residual Sugar, Total Sulfur Dioxide, & pH; ie most of them).
+
+```{r QualityLM, echo=FALSE, warning=FALSE, message=FALSE, results=FALSE}
+
+# summaries/r.squared of previous plots; results are hidden then manually written about in-context
+
+qC.A <- lm(quality ~ citric.acid,
+          data = subset(ww, quality >= 5 &
+                          citric.acid > .05 &
+                          citric.acid < .74))
+summary(qC.A)$r.squared
+
+qR.S <- lm(quality ~ residual.sugar,
+          data = subset(ww, quality >= 5 &
+                          residual.sugar < 18.8))
+summary(qR.S)$r.squared
+
+qC <- lm(quality ~ chlorides,
+          data = subset(ww, quality >= 5 &
+                          chlorides > .02 &
+                          chlorides < .067))
+summary(qC)$r.squared
+
+qT.S <- lm(quality ~ total.sulfur.dioxide,
+          data = subset(ww, quality >= 5 &
+                          total.sulfur.dioxide < 241))
+summary(qT.S)$r.squared
+
+qD <- lm(quality ~ density,
+          data = subset(ww, quality >= 5 &
+                          density < 1.001031 &
+                          density > .9881569))
+summary(qD)$r.squared
+
+qP <- lm(quality ~ pH,
+          data = subset(ww, quality >= 5))
+summary(qP)$r.squared
+
+qA <- lm(quality ~ alcohol,
+          data = subset(ww, quality >= 5))
+summary(qA)$r.squared
+
+```
+
+```{r QualityLMAll, echo=FALSE, warning=FALSE, message=FALSE, results=FALSE}
+
+# More hidden summaries; independent variable subset by existing standard but all Quality levels included
+
+qC.A <- lm(quality ~ citric.acid,
+          data = subset(ww, citric.acid > .05 &
+                          citric.acid < .74))
+summary(qC.A)$r.squared
+
+qR.S <- lm(quality ~ residual.sugar,
+          data = subset(ww, residual.sugar < 18.8))
+summary(qR.S)$r.squared
+
+qC <- lm(quality ~ chlorides,
+          data = subset(ww, chlorides > .02 &
+                          chlorides < .067))
+summary(qC)$r.squared
+
+qT.S <- lm(quality ~ total.sulfur.dioxide,
+          data = subset(ww, total.sulfur.dioxide < 241))
+summary(qT.S)$r.squared
+
+qD <- lm(quality ~ density,
+          data = subset(ww, density < 1.001031 &
+                          density > .9881569))
+summary(qD)$r.squared
+
+qP <- lm(quality ~ pH,
+          data = ww)
+summary(qP)$r.squared
+
+qA <- lm(quality ~ alcohol,
+          data = ww)
+summary(qA)$r.squared
+
+```
+
+```{r QualityLMAllBoth, echo=FALSE, warning=FALSE, message=FALSE, results=FALSE}
+
+# Even more summaries; no data trimming
+
+qC.A <- lm(quality ~ citric.acid,
+          data = ww)
+summary(qC.A)$r.squared
+
+qR.S <- lm(quality ~ residual.sugar,
+          data = ww)
+summary(qR.S)$r.squared
+
+qC <- lm(quality ~ chlorides,
+          data = ww)
+summary(qC)$r.squared
+
+qT.S <- lm(quality ~ total.sulfur.dioxide,
+          data = ww)
+summary(qT.S)$r.squared
+
+qD <- lm(quality ~ density,
+          data = ww)
+summary(qD)$r.squared
+
+qP <- lm(quality ~ pH,
+          data = ww)
+summary(qP)$r.squared
+
+qA <- lm(quality ~ alcohol,
+          data = ww)
+summary(qA)$r.squared
+
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, results=FALSE}
+
+# Still more summaries; Quality trimmed to include 5 and higher with no trimming on independent variables
+
+r1 <- lm(quality ~ fixed.acidity,
+          data = subset(wwLess, quality >= 5))
+
+r2 <- lm(quality ~ volatile.acidity,
+          data = subset(wwLess, quality >= 5))
+
+r3 <- lm(quality ~ free.sulfur.dioxide,
+          data = subset(wwLess, quality >= 5))
+
+r4 <- lm(quality ~ sulphates,
+          data = subset(wwLess, quality >= 5))
+
+r5 <- lm(quality ~ pct.citric,
+          data = subset(wwLess, quality >= 5))
+
+r6 <- lm(quality ~ pct.free,
+          data = subset(wwLess, quality >= 5))
+
+summary(r1)$r.squared
+summary(r2)$r.squared
+summary(r3)$r.squared
+summary(r4)$r.squared
+summary(r5)$r.squared
+summary(r6)$r.squared
+        
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, results=FALSE}
+
+# Long shot summaries: the variables I didn't include based on box plots
+
+r1 <- lm(quality ~ fixed.acidity,
+          data = wwLess)
+
+r2 <- lm(quality ~ volatile.acidity,
+          data = wwLess)
+
+r3 <- lm(quality ~ free.sulfur.dioxide,
+          data = wwLess)
+
+r4 <- lm(quality ~ sulphates,
+          data = wwLess)
+
+r5 <- lm(quality ~ pct.citric,
+          data = wwLess)
+
+r6 <- lm(quality ~ pct.free,
+          data = wwLess)
+
+summary(r1)$r.squared
+summary(r2)$r.squared
+summary(r3)$r.squared
+summary(r4)$r.squared
+summary(r5)$r.squared
+summary(r6)$r.squared
+
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, results=FALSE}
+
+# Summaries again of the excluded variable, transformed with log10
+
+r1 <- lm(quality ~ log10(fixed.acidity),
+          data = wwLess)
+
+r2 <- lm(quality ~ log10(volatile.acidity),
+          data = wwLess)
+
+r3 <- lm(quality ~ log10(free.sulfur.dioxide),
+          data = wwLess)
+
+r4 <- lm(quality ~ log10(sulphates),
+          data = wwLess)
+
+r5 <- lm(quality ~ log10(pct.citric),
+          data = wwLess)
+
+r6 <- lm(quality ~ log10(pct.free),
+          data = wwLess)
+
+summary(r1)$r.squared
+summary(r2)$r.squared
+summary(r3)$r.squared
+summary(r4)$r.squared
+summary(r5)$r.squared
+summary(r6)$r.squared
+
+```
+
+Not displayed are the results of 6 different code cells all computing R^2 values, with various modifiers and methods. First are the 6 variables that potentially looked promising, plus Alcohol, with each variable's worst outliers excluded, including a Quality score of 5 or higher. I left Alcohol out of the 6-plot grid as I already knew Quality's highest correlation was with Alcohol.
+
+*R^2 with Quality above 4*  
+Citric Acid -> 0.000631755  
+Residual Sugar -> 0.01804341  
+Chlorides -> 0.08302848  
+Total Sulfur Dioxide -> 0.04429476  
+Density -> 0.1188008  
+pH -> 0.01226858  
+Alcohol -> 0.2186184  
+
+The remaining cells contain formulas for the summaries and R^2 values using all Quality scores, using a subset with collective limits in place as opposed to limits per variable, using the entire set without limits barring Quality, using the entire set without limits including Quality, tranforming variables with log10, adding the rejected variables back into the mix, and different combinations of those. Essentially I was desperately trying to find more useful R^2 values with Quality. I didn't find anything useful in all those hidden results, but at least I won't be left wondering.
+
+### Alcohol vs Quality
+
+```{r AlcoholvsQuality, echo=FALSE, warning=FALSE, message=FALSE}
+
+qa1 <- ggplot(aes(x = quality, y = alcohol, color = alcohol),
+       data = ww) +
+  geom_point() +
+  labs(title = 'Alcohol Content by Quality Score')
+
+qa2 <- ggplot(aes(x = quality, y = alcohol),
+       data = ww) +
+  geom_boxplot(aes(group = quality)) +
+  labs(title = 'Alcohol Content by Quality Score')
+
+grid.arrange(qa1, qa2, ncol = 2)
+
+with(subset(ww, quality >= 5), cor(alcohol, quality))
+
+```
+
+With an unimpressive score of 0.43, Quality's greatest correlation co is to
+Alcohol. Doing the initial scatterplot wasn't very well thought-out, but after
+switching to the box plot, this looked very promising. Starting at the Quality
+score of 5 while focusing on the medians, there seems to be a fantastic positive
+correlation, but the spread on the boxes is pretty extreme. The correlation
+between Alcohol and Quality, barring Quality values below 5, is 0.47 so there's
+only a change of +0.04.
+
+While statistically this isn't particularly impressive, the boxplot paints a
+pretty drastic picture.
+
+### Quality vs Free Sulfur Dioxide
+
+```{r QualityvsFreeSulfurDioxide, echo=FALSE, warning=FALSE, message=FALSE}
+
+# data set barring top 1% of FSD
+
+with(subset(ww, free.sulfur.dioxide < 81), cor(free.sulfur.dioxide, quality))
+
+fc1 <- ggplot(aes(x = quality, y = free.sulfur.dioxide),
+       data = subset(ww, free.sulfur.dioxide < 81)) +
+  geom_boxplot(aes(group = quality), alpha = .5, color = 'red') +
+  geom_line(stat = 'summary', color = 'blue', size = 1, alpha = .5) +
+  geom_point(stat = 'summary', color = 'blue') +
+  geom_hline(yintercept = 50, color = 'orange', size = 1.2) +
+  labs(title = 'Quality vs FSD Excluding Highest 1%')
+
+# data set with FSD > 50, the alleged point where it starts to matter
+
+with(subset(ww, free.sulfur.dioxide > 50 &
+              free.sulfur.dioxide < 81),
+     cor(free.sulfur.dioxide, quality))
+
+fc3 <- ggplot(aes(x = quality, y = free.sulfur.dioxide),
+       data = subset(ww, free.sulfur.dioxide > 50 &
+                       free.sulfur.dioxide < 81)) +
+  geom_boxplot(aes(group = quality), color = 'red') +
+  geom_line(stat = 'summary', fun.y = mean,
+            color = 'blue', size = 1, alpha = .5) +
+  geom_point(stat = 'summary', fun.y = mean,
+             color = 'blue') +
+  labs(title = 'Quality vs FSD Excluding Highest 1% and Values < 50')
+
+grid.arrange(fc1, fc3, ncol = 1)
+
+```
+
+Theoretically, Free Sulfur Dioxide and Quality should have a fair correlation,
+as FSD specifically causes a bad taste in wine. The first plot seems counter-
+intuitive as the FSD measurement actually increases with quality overall, but
+a closer look at the dataset information tells me 50 mg/dm^3 is when FSD starts
+having a negative impact. The horizontal line at 50 demonstrates that the bulk
+of the data, including the entirety of all boxes on the plot, falls below the
+'bad taste' threshold.
+
+Taking that into account and excluding values below 50, the plot looks like it
+makes more sense, with the medians and means steadily decreasing (except the
+tiny jump from the median of 6 to that of 7) but the correlation is still
+basically non-existent at -0.049; at least it's negative now though.
+
+---
+
+As it stands, the Quality of any given white wine really doesn't seem to be
+predictable based on the other values. As Alcohol is the only variable with
+even a moderate correlation to Quality, I wonder if it can be predicted based
+on the other values. Density does have the second highest correlation (this one
+is negative) to Quality, and also is closely related to Sugar and Alcohol, so
+I'll be looking at that one as well.
+
+### Alcohol vs Sugar
+
+```{r AlcoholvsSugar, echo=FALSE, warning=FALSE, message=FALSE}
+
+ggplot(aes(x = alcohol), data = ww) +
+  geom_histogram(binwidth = 0.1) +
+  geom_vline(xintercept = 10.3, color = 'orange') +
+  geom_vline(xintercept = 11.6, color = 'orange') +
+  geom_vline(xintercept = 13.3, color = 'orange')
+
+# Split Alcohol into multiple buckets so it can be better compared to other variables
+
+# even number split
+ww$alcohol.bucket <- cut(ww$alcohol, c(7.9, 9.5, 11.1, 12.7, 14.3))
+# what looks like groups
+ww$alcohol.bucket2 <- cut(ww$alcohol, c(7.9, 10.3, 11.6, 13.3, 14.3))
+# based on stats
+ww$alcohol.bucket3 <- cut(ww$alcohol, c(7.9, 9.5, 10.4, 11.4, 14.3))
+
+ar1 <- ggplot(aes(x = alcohol, y = residual.sugar, color = alcohol.bucket), # first set of bins
+       data = subset(ww, residual.sugar < 18.8)) +
+  geom_boxplot(aes(group = alcohol.bucket)) +
+  geom_hline(yintercept = 10, color = 'blue') +
+  labs(title = 'Residual Sugar by Alcohol Content, Evenly Spaced Buckets')
+
+ar2 <- ggplot(aes(x = alcohol, y = residual.sugar, color = alcohol.bucket2), # second set of bins
+       data = subset(ww, residual.sugar < 18.8)) +
+  geom_boxplot(aes(group = alcohol.bucket2)) +
+  geom_hline(yintercept = 10, color = 'blue') +
+  labs(title = 'Residual Sugar by Alcohol Content, Buckets Grouped by \'Hill\'')
+
+ar3 <- ggplot(aes(x = alcohol, y = residual.sugar, color = alcohol.bucket3), # third set of bins
+       data = subset(ww, residual.sugar < 18.8)) +
+  geom_boxplot(aes(group = alcohol.bucket3)) +
+  geom_hline(yintercept = 10, color = 'blue') +
+  labs(title = 'Residual Sugar by Alcohol Content, Min, Q1, Med, Q3, Max Buckets')
+
+grid.arrange(ar1, ar2, ar3, ncol = 1)
+
+with(subset(ww, residual.sugar < 18.8), cor.test(residual.sugar, alcohol))
+
+ww %>%
+	group_by(alcohol.bucket3) %>%
+	summarise(mean.sugar = mean(residual.sugar),
+	          median.sugar = median(residual.sugar))
+
+rsA <- lm(alcohol ~ residual.sugar, data = subset(ww, residual.sugar < 18.8))
+summary(rsA)$r.squared
+
+```
+
+> *Note to grader!*
+One of the things I was supposed to fix is the box plots showing Alcohol against Residual Sugar, as both are continuous values. However the grading notes did say what I need to do is transform the x-axis variable into categorical with bins/buckets, but that's exactly what this grid is: the box plots with x-axes of Alcohol as cut into bins using 3 different sets of separation points. I added the buckets as the color values in case that's what the grader meant, but I'm not sure overall.
+
+I've got multiple bucket configurations here because I really didn't know what
+the best route would even be regarding splitting up Alcohol. The 3rd one, the
+one using numbers from a statistical summary, seems like it's the most valid as
+it's not based on my likely-misguided estimates of 'hill' size or just evenly
+spaced (which takes parameters into account but totally ignores any aspects of
+the actual data contained within). I made the buckets in the first place in
+order to try finding some hidden relationships; the Alcohol histogram somewhat
+looks like it has four 'hills' to it so cutting it up seemed to have at least
+potential to help.
+
+```{r SugarvsAlcoholTransformed, echo=FALSE, message=FALSE, warning=FALSE}
+
+ggplot(aes(x = sqrt(alcohol), y = residual.sugar),
+       data = subset(ww, residual.sugar < 18.8)) +
+  geom_point() +
+  scale_x_sqrt() +
+  geom_smooth()
+
+ggplot(aes(x = alcohol, y = residual.sugar),
+       data = subset(ww, residual.sugar < 18.8)) +
+  geom_point(alpha = 0.25,
+             position = position_jitter(h = 0),
+             color = 'orange') +
+  coord_trans(x = 'sqrt') +
+  geom_line(stat = 'summary', fun.y = mean, color = 'blue')
+#  geom_line(stat = 'summary', fun.y = quantile(probs = .5))
+
+tt1 <- ggplot(aes(x = alcohol, y = residual.sugar),
+       data = subset(ww, residual.sugar < 18.8)) +
+  geom_point(alpha = 0.25, color = 'red') +
+  geom_smooth() +
+  geom_quantile()
+
+tt2 <- ggplot(aes(x = residual.sugar, y = alcohol),
+       data = subset(ww, residual.sugar < 18.8)) +
+  geom_point(alpha = 0.25, color = 'red') +
+  geom_smooth()
+
+grid.arrange(tt1, tt2, ncol = 1)
+
+```
+
+These are just four more plots based on Alcohol and Residual Sugar. I was
+transforming data, swapping axes, adding different lines, etc. trying to find a new way to see the relationship and I just didn't learn anything from it.
+
+### Density
+
+```{r ChloridesDensity, echo=FALSE, warning=FALSE, message=FALSE}
+
+dCh1 <- ggplot(aes(x = chlorides, y = density),
+       data = ww) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(color = 'red') +
+  labs(title = 'Including Outliers')
+
+dCh2 <- ggplot(aes(x = chlorides, y = density),
+       data = subset(ww, chlorides > 0.02 &
+                       chlorides < 0.067 &
+                       density < 1.001031 &
+                       density > 0.9881569)) +
+  geom_point(alpha = 0.25, position = position_jitter()) +
+  geom_smooth(color = 'red', size = 1.2) +
+  geom_quantile(color = 'orange', size = 1.2) +
+  labs(title = 'Excluding Outliers')
+
+grid.arrange(dCh1, dCh2, ncol = 1, top = 'Chlorides vs Density')
+
+with(subset(ww, chlorides > 0.02 &
+                       chlorides < 0.067 &
+                       density < 1.001031 &
+                       density > 0.9881569),
+     cor(chlorides, density))
+
+```
+
+In all honesty, I included both the charts with and without outliers for two
+reasons. First reason is because this is a particularly dramatic demonstration
+of the difference outliers can make visually; second reason is because the Including Outliers plot made me laugh heartily and unexpectedly.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+
+with(subset(ww, chlorides > 0.02 &
+                       chlorides < 0.067 &
+                       density < 1.001031 &
+                       density > 0.9881569),
+     cor(chlorides, density))
+
+xx <- lm(density ~ chlorides,
+         data = wwLess)
+summary(xx)$r.squared
+
+# round(cor(subset(wwLess, select = -c(alcohol.bins, X))), 2)
+
+```
+
+The correlation and R^2 values between Density and Chlorides are actually pretty promising, especially as Alcohol and Sugar are the components intertwined with Density measurement (meaning this could bring me up to 3 helper variables for Density).
+
+```{r tbd, echo=FALSE, warning=FALSE, message=FALSE}
+
+dRS <- lm(density ~ residual.sugar,
+          data = subset(ww, density <= 1.0 & residual.sugar < 18.8))
+summary(dRS)$r.squared
+
+dAl <- lm(density ~ alcohol,
+          data = subset(ww, density <= 1.0))
+summary(dAl)$r.squared
+
+# creating a new variable for residual sugar minus alcohol to compare
+ww$rs.a <- ww$residual.sugar - ww$alcohol
+
+dAlRS <- lm(density ~ rs.a,
+            data = subset(ww, density <= 1.0))
+summary(dAlRS)$r.squared
+
+cor(ww$density, ww$rs.a)
+
+```
+
+The first two values displayed are R^2 of Density to Residual Sugar and R^2 of Density to Alcohol. I wanted to try comparing a new variable to Density: residual.sugar - alcohol. The 3rd R^2 value displayed is the result of this new variable and Density at a pretty impressive 0.8132 (with a correlation score of 0.91).
+
+### Sugar and Alcohol
+
+```{r ExploringSugarAlcoholTrans, echo=FALSE, message=FALSE, warning=FALSE}
+
+# I tried these and actually several more, trying to find a decent way to transform sugar and alcohol to compare with density
+
+ggplot(aes(x = density, y = (residual.sugar / (residual.sugar + alcohol))),
+           data = wwLess) +
+  geom_point()
+
+ggplot(aes(x = density, y = alcohol / (residual.sugar + alcohol)),
+       data = wwLess) +
+  geom_point()
+
+```
+
+Two of many plots made while attempting to transform Sugar and Alcohol into one variable helpful with Density.
+
+```{r SugMinAlc, echo=FALSE, message=FALSE, warning=FALSE}
+
+# quantile(ww$rs.a, .99)
+
+ggplot(aes(x = density, y = rs.a),
+       data = subset(ww, density <= 1 & rs.a < 9.5)) +
+  geom_point(alpha = .25) +
+  geom_quantile(size = 1.2, color = 'red')
+
+```
+
+Plotting the new `residual.sugar - alcohol` variable against Density. There are a whole mess of points down around -10 there because all the low Residual Sugar values, but overall this is probably the most valid (in terms of helping me proceed) plot I've made so far.
+
+# Bivariate Analysis
+
+### Relationships/Variances
+
+Focusing on Quality is fairly frustrating as my highest R^2 value with it is Alcohol at 0.1897; correlation score is 0.43. The second highest is Density at R^2 of 0.1188. The only way I can think to keep pursuing Quality is to focus on Alcohol and Density; if I can learn more about those two, maybe that can lead to a higher understanding of Quality.
+
+I tried using log10s and square roots, limiting data at varying quantiles, entirely lopping two ranks out of only seven total from Quality, going through the processes with variables that seemed irrelevant (those stayed irrelevant), just all sorts of things to no avail.
+
+Density has a hefty relationship with both Alcohol and Residual Sugar, as it should; Density is measured using both those values, so a high correlation should be expected. Density also has a fair relationship to Chlorides with a cor value of 0.4918.
+
+Alcohol has a fair relationship with several variables, but honestly I wanted to wait until the multivariate section to get into it (I tried more than once to start it bivariate but kept wanting to add more variables). Sugar and Alcohol only have an R^2 score of 0.213, but I do wonder if there's something more between them through some sort of transformation.
+
+### Tertiary variable relationships
+
+Density ~ Chlorides has an R^2 score of 0.4918, which definitely surprised me
+as the information I've gotten regarding Density states it as a calculation
+related to Alcohol and Sugar, specifically.
+
+Sugar, Chlorides, and Sulfur Dioxide all have scores between 0.27 and 0.41 with one another. I honestly don't know if I find that surprising because while low, maybe there's something there; or if I find it surprising because I would expect those cor scores to be higher. For example, 0.27 for Residual Sugar and Chlorides: it would make a lot of sense to me if that was much higher, as I wouldn't be surprised to see the balance between sugar and salt more standardized across a specific category of wine.
+
+I don't know too much about wine, but I do know that along with the looking for unique qualities, some characteristics are expected/demanded by people who know more about wine than I do. Salt and sugar are both very distinct and scrutinized culinary components; pretty much anything can be over/under salted or sweetened. It could be that I'm thinking too much about food and it just doesn't work the same way with wine, or maybe one or both amounts are just so miniscule that they don't actually affect the taste much. I'm sure I could get more insight by researching this, but looking through this data is what put the idea in my head in the first place so it seemed right to mention it.
+
+### Strongest relationship
+
+After messing around with Residual Sugar and Alcohol for quite a while, I wanted to try residual.sugar - alcohol as a variable. Unfortunately I don't have any sort of an 'I have heavy statistics knowledge' reason as to why, but since Alcohol's correlation to Density and Sugar's correlation to Density even out to nearly zero when added together, it made sense to me to subtract the variable with the negative cor value (Alcohol) from that with the positive. Running this new variable against Density gave me a correlation score of 0.91.
+
+I was so excited about this that I erased the relevant code and wrote it again without notes in order to see if I would get the same results. After that, I searched around and found a different method for calculating the same stats so I would have even more confirmation.
+
+# Multivariate Plots
+
+### First Steps
+
+```{r MultivariateHousekeeping, echo=FALSE, message=FALSE, warning=FALSE}
+
+# Each variable created here is the min-max scaled version of an existing variable
+
+wwLess$mmAlcohol <- ((wwLess$alcohol - min(wwLess$alcohol)) /
+                       (max(wwLess$alcohol) - min(wwLess$alcohol)))
+
+wwLess$mmResid <- ((wwLess$residual.sugar - min(wwLess$residual.sugar)) /
+                     (max(wwLess$residual.sugar) - min(wwLess$residual.sugar)))
+
+wwLess$mmChlor <- ((wwLess$chlorides - min(wwLess$chlorides)) /
+                     (max(wwLess$chlorides) - min(wwLess$chlorides)))
+
+theme_set(theme_dark())
+
+```
+
+The beginning of the multivariates section contains the code that creates my 'mm' variables, which are explained after the next grid. I also set the theme darker so the lighter colors can still be seen properly.
+
+### Alcohol and Sugar vs Density
+
+```{r AlcoholSugarbyDensity, echo=FALSE, warning=FALSE, message=FALSE}
+
+# Plotting Alcohol and Residual Sugar both on the y-axis against Density on the x-axis; second plot is the same thing using min-max scaling on the y-axis to better see how all 3 variables work together
+
+arsd1 <- ggplot(aes(x = density, y = residual.sugar),
+       data = subset(wwLess, density <= 1.0)) +
+  geom_point(alpha = 1/3, color = '#80cbc4') +
+  geom_smooth(color = '#fa8072', size = 1.25) +
+  geom_point(aes(x = density, y = alcohol), color = '#ec6179', alpha = 1/3) +
+  geom_smooth(aes(x = density, y = alcohol), color = '#008080', size = 1.25) +
+  labs(title = 'Alcohol and Sugar by Density')
+
+arsd2 <- ggplot(aes(x = density, y = mmAlcohol),
+                data = subset(wwLess, density <= 1)) +
+  geom_point(color = '#ec6179', alpha = 1/3) +
+  geom_point(aes(x = density, y = mmResid), color = '#80cbc4', alpha = 1/3) +
+  geom_smooth(aes(y = mmAlcohol), color = '#008080', size = 1.25) +
+  geom_smooth(aes(y = mmResid), color = '#fa8072', size = 1.25) +
+  labs(title = 'Alcohol and Residual Sugar vs Density',
+       y = 'Alcohol and Residual Sugar on min-max scale')
+
+grid.arrange(arsd1, arsd2, ncol = 1)
+
+```
+
+The first plot fits the data okay since Residual Sugar and Alcohol's values
+overlap, but as Alcohol has a smaller value range, it's smooshed in the center. I tried multiple methods to make it fit more nicely (different trans commands, scaling attempts, cutting more data, etc.) before switching gears and finding the min-max scale formula. I made a new variable each for Alcohol and Residual Sugar by passing their corresponding values from my outlier-free datafram through: `(x-min(x)) / (max(x)-min(x))` into new columns.
+
+This allows values to be spread to scale from their original into a range of 0 - 1, creating a y-axis along which different values can co-exist in a manner that's far easier to interpret. The second plot was essentially what I'd been seeing in my head, my goal, so that's very exciting. The second one also very clearly demonstrates the relationships between Density and each other variable. As Density increases, Residual Sugar increases and Alcohol decreases.
+
+```{r AlcSugChlorbyDensity, echo=FALSE, warning=FALSE, message=FALSE}
+
+# Adding point and smooth Chlorides layers to the min-max plot
+
+ggplot(aes(x = density, y = mmAlcohol),
+                data = subset(wwLess, density <= 1)) +
+  geom_point(color = '#ec6179', alpha = 1/3) +
+  geom_point(aes(x = density, y = mmResid), color = '#80cbc4', alpha = 1/3) +
+  geom_smooth(aes(y = mmAlcohol), color = '#008080', size = 1.25) +
+  geom_smooth(aes(y = mmResid), color = '#fa8072', size = 1.25) +
+  geom_point(aes(x = density, y = mmChlor)) +
+  geom_smooth(aes(y = mmChlor)) +
+  labs(title = 'Alcohol, Residual Sugar, and Chlorides vs Density',
+       y = 'Alcohol, Residual Sugar, and Chlorides on min-max scale')
+
+```
+
+WOW. I added the min-max scaled Chlorides variable and it's just everywhere. I can see that it is positive (before I added the line), as the upper left and bottom right corners are mostly empty, but especially as compared to the pre-existing plot data, Chlorides doesn't look at all impressive plotted against Density.
+
+### Alcohol vs Anything
+
+```{r AlcoholPrep, echo=FALSE, warning=FALSE, message=FALSE}
+
+# Creating a variable in my regular and pared-down datasets, cutting Alcohol into bins based on 1.0% steps, except the final bin which is 2.0
+
+ww$alcOnes <- cut(ww$alcohol,
+                  c(7.9, 8.9, 9.9, 10.9, 11.9, 12.9, 14.9))
+wwLess$alcOnes<- cut(wwLess$alcohol,
+                     c(7.9, 8.9, 9.9, 10.9, 11.9, 12.9, 14.9))
+
+```
+
+I created a couple variables dividing Alcohol into buckets of 1% each (the final bucket was almost empty so I combined 2%).
+
+```{r AlcoholvsThings, echo=FALSE, warning=FALSE, message=FALSE}
+
+# plot to show the frequency of each Quality rating within the range of Alcohol content 
+
+ggplot(data = wwLess,
+       aes(x = alcohol, color = factor(quality), group = quality)) +
+  geom_density(adjust = 1/2, size = 1.3) +
+  scale_color_brewer(palette = 'Reds', direction = 1, type = 'seq') +
+  guides(color = guide_legend(title = 'quality'))
+
+```
+
+While there aren't many datapoints at Quality 9, it's still comforting to see its large spike at a high Alcohol level; kind of the same principal, but 4 has one big spike, down at the lower end of Alcohol content. 8 also has a spike up at the high end there, reinforcing the fair correlation between Quality rating and Alcohol content.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+
+# Checking Alcohol (broken up into mainly bins of 1.0 each) value density within the range of four different variables that it has a fair correlation with
+
+d1 <- ggplot(data = wwLess,
+             aes(x = density, color = alcOnes, group = alcOnes)) +
+  geom_density(size = 1.3) +
+  scale_color_brewer(palette = 'Oranges', direction = 2)
+
+d2 <- ggplot(data = wwLess,
+             aes(x = total.sulfur.dioxide, color = alcOnes, group = alcOnes)) +
+  geom_density(size = 1.3) +
+  scale_color_brewer(palette = 'BuPu', direction = 2)
+
+d3 <- ggplot(data = wwLess,
+             aes(x = chlorides, color = alcOnes, group = alcOnes)) +
+  geom_density(size = 1.3) +
+  scale_color_brewer(palette = 'BuGn', direction = 2)
+
+d4 <- ggplot(data = wwLess,
+             aes(x = residual.sugar, color = alcOnes, group = alcOnes)) +
+  geom_density(size = 1.3) +
+  scale_color_brewer(palette = 'PuRd', direction = 2)
+
+grid.arrange(d1, d2, d3, d4, ncol = 2)
+
+```
+
+Ah yes. This is far easier for me to understand than the scatterplots. Density and Sugar, I've already worked with specifically, and they both showcase their negative correlation to alcohol well. Although I know what the Alcohol histogram looks like, this form drives it home better for me, as 3 of the 6 bins are heavily on the lowest 1/3 or so of density. Residual Sugar is confusing me. Almost all the bins are vastly in the lowest 1/4, the lowest Alcohol bin is overall higher in sugar content, but the second lowest bin, 8.9 - 9.9, has bumps in quarters 1, 2, and 3. I just want to know why that Alcohol % specifcally is spread relatively evenly across Residual Sugar.
+
+Total Sulfur Dioxide is only really interesting to me here because the lowest Alcohol is to the left of the second lowest, the only one out of order from highest to lowest. Chlorides is essentially the same story, in order from strongest to weakest, apart from the lowest two buckets, which are switched.
+
+An interesting common thread between all four of these is that near-exclusively, as Alcohol content decreases, the range along each x-axis increases. I know Alcohol has a lot more values in those lower buckets than the higher ones, but I also wonder if it's something more than just higher counts.
+
+### Density vs Anything
+
+```{r DensityvsThings, echo=FALSE, warning=FALSE, message=FALSE}
+
+# plot Density against other variables and color the dots by Quality rating
+
+ggplot(aes(x = density, y = alcohol, color = factor(quality)),
+       data = wwLess) +
+  geom_point() +
+  scale_color_brewer(palette = 'Spectral', direction = -1) +
+  guides(color = guide_legend(title = 'quality'))
+
+ggplot(aes(x = density, y = chlorides, color = factor(quality)),
+       data = wwLess) +
+  geom_point() +
+  scale_color_brewer(palette = 'Spectral', direction = -1) +
+  guides(color = guide_legend(title = 'quality'))
+
+ggplot(aes(x = density, y = total.sulfur.dioxide, color = factor(quality)),
+       data = wwLess) +
+  geom_point() +
+  scale_color_brewer(palette = 'Spectral', direction = -1) +
+  guides(color = guide_legend(title = 'quality'))
+
+```
+
+These plots are fun, and pretty good at conveying information from where I'm sitting, but I'm not particularly picking up anything new here. Quality scores tend to be higher with Alcohol content, not very but noticably negatively correlated with Chlorides, and a bit negatively correlated with Total Sulfur Dioxide.
+
+# Multivariate Analysis
+
+### Observed relationship information
+
+Seeing Quality in the manner I did really made the rarity of higher scores stand out. I already knew the numbers and had see it with the histogram, but seeing so few red dots scattered amid all this color just seemed odd (valid, but odd).
+
+### Interesting or surprising interactions
+
+I feel like I should have realized before, but seeing the four density plots together very strongly showed a tendency for the data points to spread as the Alcohol content gets lower, indicating more of a uniformity within the chemical makeup of higher volume white wines.
+
+### OPTIONAL: Data model creation
+
+Nope, didn't do it! I could hardly find anything much related to anything, I was nowhere near being able to attempt a model. I went into the project wanting to do so but it felt like the more I learned, the less able I'd have been to do so.
+
+------
+
+# Final Plots and Summary
+
+### Plot One
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+
+summary(ww$density)
+
+k1 <- ggplot(aes(x = density), data = ww) +
+  geom_histogram(fill = '#ec6179') +
+  labs(title  = 'Density Including All Data Points',
+       x = 'Density (g / cm^3)',
+       y = 'Count of Values')
+
+k2 <- ggplot(aes(x = density),
+           data = subset(ww, density < 1.001031 & density > .9881569)) +
+  geom_histogram(binwidth = .0001, fill = '#008080') +
+  labs(title = 'Density Including 99.4% of Central Values',
+       x = 'Density (g / cm^3)',
+       y = 'Count of Values')
+
+grid.arrange(k1, k2, ncol = 1,
+             top = 'Density Before and After Removing 0.6% of  Data')
+
+```
+
+### Description One
+
+Each of these histograms shows Density within the white wine dataset. The first one includes all the values, while the second includes the central 99.4% of values. By removing that 0.6%, the data becomes far easier to subsequently work with.
+
+### Plot Two
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+
+ggplot(aes(x = density, y = mmAlcohol),
+                data = subset(wwLess, density <= 1)) +
+  geom_point(color = '#ec6179', alpha = 1/2) +
+  geom_point(aes(x = density, y = mmResid), color = '#80cbc4', alpha = 1/2) +
+  geom_smooth(aes(y = mmAlcohol), color = '#008080', size = 1.25) +
+  geom_smooth(aes(y = mmResid), color = '#fa8072', size = 1.25) +
+  labs(title = 'Alcohol and Residual Sugar Compared with Density',
+       y = 'Alcohol and Residual Sugar Compared with Density on a min-max Scale',
+       x = 'Density (g / cm^3)')
+
+```
+
+### Description Two
+
+As both Residual Sugar and Alcohol have high correlations with Density, it could be helpful to see them both plotted against it, on scale with one another. Using a min-max calculation achieves this and the plot shows two clear relations to Density.
+
+### Plot Three
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+
+ggplot(data = wwLess, aes(x = alcohol, color = factor(quality), group = quality)) +
+  geom_density(adjust = 1/2, size = 1.3) +
+  scale_color_brewer(palette = 'Reds', direction = 1, type = 'seq') +
+  labs(title = 'Frequency of Quality Scores by Alcohol Levels',
+       x = 'Alcohol (% by Volume)',
+       y = 'Density of Quality Scores') +
+  guides(color = guide_legend(title = 'Quality'))
+
+```
+
+### Description Three
+
+Alcohol has a higher correlation to Quality than Quality has to any other variable. While multiple scores show a weaker pattern, the two large spikes over high Alcohol levels are both high Quality scores, while the spike over low Alcohol levels is a low Quality score, helping to reinforce the correlation.
+
+------
+
+# Reflection
+
+Overall I had a lot of fun going through the data, but honestly it did get very frustrating. I have a suspicion that I was trying to do too much right from the start (not too many plots or something like that, but trying to 'solve' this in some way), which made it pretty discouraging when I finally accepted I won't be able to come up with some sort of model or strong input here. I started kind of giving up during the multivariate section because I truly didn't know where else to go from what I'd done. It's very possible that I just got myself stuck on some arbitrary track and blinded myself to other potentials.
+
+Realizing that the fairly weak connection between Alcohol and Quality was my best chance at finding actionable insight was daunting, but at the same time I did laugh. Of course the ratio of alcohol would be the predominate factor in how well the wine is ranked.
+
+Logistically, I really enjoyed working with R overall; it's a pretty intuitive language and usually not too cumbersome. I do get frustrated regarding packages. While they allow you to do so much more, they very frequently deviate from how R is generally laid out and the syntax involved. I also ran into frequent problems installing and updating packages, as well as finding a solution to a question I had then learning the package involved is defunct.
+
+With the data at-large, almost every column had 1 unreasonably extreme outlier. Many of those columns, as well as some not included there, had several or more heavy outliers. Taking percentages off the top and/or bottom worked very well but I continually felt like I wasn't allowed to do that, like I was breaking some cardinal data rule. Before taking the R course, I'd always been put in a box(plot, zing) regarding data; a homework or test question would feasibly have many valid answers, but there's only one accepted, so it's hard for me to break out of the restricted mindset and back into how I naturally think. At the end of the day, I feel like many of the measurements in this dataset weren't even valid, but I'm not confident in claiming that has nothing to do with my own insecurities and inexperience.
